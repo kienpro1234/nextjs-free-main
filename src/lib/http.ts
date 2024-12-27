@@ -1,15 +1,31 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import envConfig from "@/config";
+import { normalizePath } from "@/lib/utils";
 import { LoginResType } from "@/schemaValidations/auth.schema";
+import { redirect } from "next/navigation";
 
 type CustomOptions = Omit<RequestInit, "method"> & {
   baseUrl?: string;
 };
 
-class HttpError extends Error {
+const ENTITY_ERROR_STATUS = 422;
+const AUTHENTICATION_ERROR_STATUS = 401;
+
+type EntityErrorPayload = {
+  message: string;
+  errors: {
+    field: string;
+    message: string;
+  }[];
+};
+
+export class HttpError extends Error {
   status: number;
 
-  payload: any;
+  payload: {
+    message: string;
+    [key: string]: any;
+  };
 
   constructor({ status, payload }: { status: number; payload: any }) {
     super("Http Error");
@@ -18,8 +34,27 @@ class HttpError extends Error {
   }
 }
 
+export class EntityError extends HttpError {
+  status: 422;
+  payload: EntityErrorPayload;
+
+  constructor({
+    status,
+    payload,
+  }: {
+    status: 422;
+    payload: EntityErrorPayload;
+  }) {
+    super({ status, payload });
+    this.status = status;
+    this.payload = payload;
+  }
+}
+
 class SessionToken {
   private token = "";
+  private _expiresAt = new Date().toISOString();
+
   get value() {
     return this.token;
   }
@@ -30,9 +65,22 @@ class SessionToken {
     }
     this.token = token;
   }
+
+  get expiresAt() {
+    return this._expiresAt;
+  }
+
+  set expiresAt(expiresAt: string) {
+    if (typeof window === "undefined") {
+      throw new Error("Cannot set expiresAt on server side");
+    }
+    this._expiresAt = expiresAt;
+  }
 }
 
 export const clientSessionToken = new SessionToken();
+
+let clientLogoutRequest: null | Promise<any> = null;
 
 const request = async <Response>(
   method: "GET" | "POST" | "PUT" | "DELETE",
@@ -56,6 +104,8 @@ const request = async <Response>(
     ? `${baseUrl}${url}`
     : `${baseUrl}/${url}`;
 
+  console.log("fullUrl", fullUrl);
+
   const res = await fetch(fullUrl, {
     ...options,
     headers: {
@@ -77,13 +127,56 @@ const request = async <Response>(
   console.log("data có gì", data);
 
   if (!res.ok) {
-    throw new HttpError(data);
+    if (res.status === ENTITY_ERROR_STATUS) {
+      throw new EntityError(
+        data as {
+          status: 422;
+          payload: EntityErrorPayload;
+        }
+      );
+    } else if (res.status === AUTHENTICATION_ERROR_STATUS) {
+      // Check trường hợp lỗi auth ở client thì xóa session token ở client và gửi request xóa ở cookies ở next server
+      if (typeof window !== "undefined") {
+        if (!clientLogoutRequest) {
+          clientLogoutRequest = fetch("/api/auth/logout", {
+            method: "POST",
+            body: JSON.stringify({ force: true }),
+            headers: {
+              ...baseHeaders,
+            },
+          });
+
+          await clientLogoutRequest;
+          clientLogoutRequest = null;
+          clientSessionToken.expiresAt = new Date().toISOString();
+          clientSessionToken.value = "";
+
+          console.log("err");
+          location.href = "/login";
+        }
+      } else {
+        const sessionToken = (options?.headers as any)?.Authorization?.split(
+          " "
+        )[1];
+        redirect(`/logout?sessionToken=${sessionToken}`);
+      }
+    } else {
+      throw new HttpError(data);
+    }
   }
 
-  if (["/auth/login", "/auth/register"].includes(url)) {
-    clientSessionToken.value = (payload as LoginResType).data.token;
-  } else if ("/auth/logout".includes(url)) {
-    clientSessionToken.value = "";
+  if (typeof window !== "undefined") {
+    if (
+      ["auth/login", "auth/register"].some(
+        (item) => item === normalizePath(url)
+      )
+    ) {
+      clientSessionToken.value = (payload as LoginResType).data.token;
+      clientSessionToken.expiresAt = (payload as LoginResType).data.expiresAt;
+    } else if ("auth/logout" === normalizePath(url)) {
+      clientSessionToken.value = "";
+      clientSessionToken.expiresAt = new Date().toISOString();  
+    }
   }
 
   return data;

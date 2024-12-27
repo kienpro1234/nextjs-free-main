@@ -1,7 +1,8 @@
 import React from "react";
 import { cookies } from "next/headers";
-import accountApiRequest from "@/apiRequests/account.api";
+// import accountApiRequest from "@/apiRequests/account.api";
 import Profile from "@/app/me/Profile";
+import accountApiRequest from "@/apiRequests/account.api";
 
 export default async function MeProfile() {
   const cookieStore = await cookies();
@@ -14,7 +15,7 @@ export default async function MeProfile() {
     <div>
       <div>
         xin chào {res.payload.data.name}
-        <Profile />
+        {/* <Profile /> */}
       </div>
     </div>
   );

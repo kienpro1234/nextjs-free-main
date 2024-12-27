@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
-import React from "react";
+import React, { useState } from "react";
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
@@ -25,8 +25,10 @@ import authApiRequest from "@/apiRequests/auth.api";
 import { useToast } from "@/hooks/use-toast";
 
 import { useRouter } from "next/navigation";
+import { handlErrorApi } from "@/lib/utils";
 
 export default function RegisterForm() {
+  const [loading, setLoading] = useState(false);
   const { toast } = useToast();
 
   const router = useRouter();
@@ -43,6 +45,8 @@ export default function RegisterForm() {
 
   // 2. Define a submit handler.
   async function onSubmit(values: RegisterBodyType) {
+    if (loading) return;
+    setLoading(true);
     try {
       const res = await authApiRequest.register(values);
 
@@ -53,22 +57,12 @@ export default function RegisterForm() {
       await authApiRequest.auth({ sessionToken: res.payload.data.token });
       router.push("/me");
     } catch (err: any) {
-      const errors = err.payload.errors as { field: string; message: string }[];
-      const status = err.status;
-      if (status === 422) {
-        errors.forEach((error) => {
-          form.setError(error.field as "email" | "password", {
-            type: "server",
-            message: error.message,
-          });
-        });
-      } else {
-        toast({
-          variant: "destructive",
-          title: "Lỗi",
-          description: err.message,
-        });
-      }
+      handlErrorApi({
+        error: err,
+        setError: form.setError,
+      });
+    } finally {
+      setLoading(false);
     }
   }
   return (

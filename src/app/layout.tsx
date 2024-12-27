@@ -23,7 +23,6 @@ export default async function RootLayout({
 }>) {
   const cookiesStore = await cookies();
   const sessionToken = cookiesStore.get("sessionToken")?.value;
-  console.log("shit", sessionToken);
   return (
     <html lang="en" suppressHydrationWarning>
       <body className={inter.className}>

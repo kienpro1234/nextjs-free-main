@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
-import React from "react";
+import React, { useState } from "react";
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
@@ -9,7 +9,6 @@ import { Button } from "@/components/ui/button";
 import {
   Form,
   FormControl,
-  //   FormDescription,
   FormField,
   FormItem,
   FormLabel,
@@ -20,8 +19,10 @@ import { LoginBody, LoginBodyType } from "@/schemaValidations/auth.schema";
 import { useToast } from "@/hooks/use-toast";
 import authApiRequest from "@/apiRequests/auth.api";
 import { useRouter } from "next/navigation";
+import { handlErrorApi } from "@/lib/utils";
 
 export default function LoginForm() {
+  const [loading, setLoading] = useState(false);
   const { toast } = useToast();
 
   const router = useRouter();
@@ -36,6 +37,8 @@ export default function LoginForm() {
 
   // 2. Define a submit handler.
   async function onSubmit(values: LoginBodyType) {
+    if (loading) return;
+    setLoading(true);
     try {
       const res = await authApiRequest.login(values);
 
@@ -46,24 +49,15 @@ export default function LoginForm() {
       await authApiRequest.auth({ sessionToken: res.payload.data.token });
       router.push("/me");
     } catch (err: any) {
-      const errors = err.payload.errors as { field: string; message: string }[];
-      const status = err.status;
-      if (status === 422) {
-        errors.forEach((error) => {
-          form.setError(error.field as "email" | "password", {
-            type: "server",
-            message: error.message,
-          });
-        });
-      } else {
-        toast({
-          variant: "destructive",
-          title: "Lỗi",
-          description: err.message,
-        });
-      }
+      handlErrorApi({
+        error: err,
+        setError: form.setError,
+      });
+    } finally {
+      setLoading(false);
     }
   }
+
   return (
     <Form {...form}>
       <form
